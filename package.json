@@ -1,6 +1,6 @@
 {
   "name": "@transcriptdock/mcp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": false,
   "type": "module",
   "description": "MCP server for TranscriptDock: transcribe videos and fetch transcripts from Claude, Cursor and other agents.",

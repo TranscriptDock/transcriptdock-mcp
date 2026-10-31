@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const USER_AGENT = "transcriptdock-mcp/0.1.2";
+const USER_AGENT = "transcriptdock-mcp/0.1.3";
 const MAX_WAIT_SECONDS = 1800;
 const MAX_VIDEO_WAIT_SECONDS = 300;
 const platformSchema = z.enum(["youtube", "tiktok", "instagram", "upload", "direct"]);

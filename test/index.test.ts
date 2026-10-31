@@ -3,6 +3,7 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "../src/index.js";
+import { defaultMode } from "../src/server.js";
 import { TranscriptDockClient } from "../src/client.js";
 
 const job = {
@@ -48,6 +49,26 @@ test("transcribe defaults mode to captions_only and never sends language or max_
   assert.equal(sentBody?.mode, "captions_only");
   assert.equal(sentBody?.language, null);
   assert.equal("max_credits" in (sentBody ?? {}), false);
+  await client.close();
+});
+
+test("Instagram links default to auto: they have no caption path", async () => {
+  assert.equal(defaultMode("https://www.instagram.com/reel/AbC123xyz/"), "auto");
+  assert.equal(defaultMode("https://instagram.com/p/AbC123xyz/"), "auto");
+  assert.equal(defaultMode("https://www.youtube.com/watch?v=example"), "captions_only");
+  assert.equal(defaultMode("https://notinstagram.com/reel/x"), "captions_only");
+  assert.equal(defaultMode("not a url"), "captions_only");
+
+  let sentBody: Record<string, unknown> | undefined;
+  const client = await connected(async (_url, init) => {
+    sentBody = JSON.parse((init?.body as string) ?? "{}");
+    return response(job);
+  });
+  await client.callTool({ name: "transcribe", arguments: { url: "https://www.instagram.com/reel/AbC123xyz/", idempotency_key: "mcp_test_key_ig" } });
+  assert.equal(sentBody?.mode, "auto");
+  // An explicit mode still wins.
+  await client.callTool({ name: "transcribe", arguments: { url: "https://www.instagram.com/reel/AbC123xyz/", mode: "transcribe", idempotency_key: "mcp_test_key_ig2" } });
+  assert.equal(sentBody?.mode, "transcribe");
   await client.close();
 });
 

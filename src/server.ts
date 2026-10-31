@@ -79,6 +79,18 @@ async function runVideoDiscovery(
   return jsonContent(result.discovery, VIDEO_DISCOVERY_RETRIEVAL);
 }
 
+// Instagram has no caption path, so captions_only can only fail there; its
+// links default to auto, which runs AI transcription (paid plans).
+export function defaultMode(url: string): "captions_only" | "auto" {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host === "instagram.com" || host.endsWith(".instagram.com")) return "auto";
+  } catch {
+    // Not a URL: leave validation to the API.
+  }
+  return "captions_only";
+}
+
 export interface ServerOptions {
   /** Upper bound for any single tool wait; remote (HTTP) hosting sets this under the function time cap. */
   maxWaitSeconds?: number;
@@ -86,9 +98,10 @@ export interface ServerOptions {
 
 export function createServer(client: TranscriptDockClient, options: ServerOptions = {}): McpServer {
   const clampWait = (requested: number) => Math.min(requested, options.maxWaitSeconds ?? Infinity);
-  const server = new McpServer({ name: "transcriptdock", version: "0.1.2" }, {
+  const server = new McpServer({ name: "transcriptdock", version: "0.1.3" }, {
     instructions: [
       "TranscriptDock returns transcripts for YouTube and TikTok videos: existing captions (1 credit per transcript) or AI transcription of the audio (2 credits per started minute) when a workspace has it enabled.",
+      "Instagram Reels have no captions: they always run AI transcription (paid plans), so they default to mode auto.",
       "For a single video URL call get_video_transcript: it submits, waits and returns the text in one step.",
       "Use transcribe + wait_for_job + get_transcript only when you need the job id early or want SRT/VTT/segments later.",
       "Results over the output cap are truncated with a preview; ask for format text to keep transcripts compact.",
@@ -101,10 +114,10 @@ export function createServer(client: TranscriptDockClient, options: ServerOption
   server.registerTool(
     "transcribe",
     {
-      description: "Submit a YouTube or TikTok URL to TranscriptDock and return the created job. captions_only costs 1 credit; auto uses captions when the video has them (1 credit) and AI transcription otherwise; transcribe always runs AI transcription (2 credits per started minute, paid plans).",
+      description: "Submit a YouTube, TikTok or Instagram Reel URL to TranscriptDock and return the created job. captions_only costs 1 credit; auto uses captions when the video has them (1 credit) and AI transcription otherwise; transcribe always runs AI transcription (2 credits per started minute, paid plans). Instagram has no captions, so it needs auto or transcribe.",
       inputSchema: {
-        url: z.string().url().describe("YouTube or TikTok video URL."),
-        mode: z.enum(["captions_only", "auto", "transcribe"]).optional().describe("Default captions_only (1 credit). auto: captions if present, else AI transcription. transcribe: always AI transcription (2 credits per started minute)."),
+        url: z.string().url().describe("YouTube, TikTok or Instagram Reel URL."),
+        mode: z.enum(["captions_only", "auto", "transcribe"]).optional().describe("Default captions_only (1 credit), or auto for Instagram. auto: captions if present, else AI transcription. transcribe: always AI transcription (2 credits per started minute)."),
         language: z.string().max(35).optional().describe("Spoken language hint for AI transcription (BCP 47, e.g. en). Omit to auto detect."),
         max_credits: z.number().int().min(1).optional().describe("Cap for one AI transcription job; the job fails with BUDGET_EXCEEDED before any charge if the measured cost is higher."),
         idempotency_key: z.string().refine(validIdempotencyKey, "idempotency_key must be 8 to 128 printable ASCII characters").describe("Stable printable ASCII key for this submission."),
@@ -113,7 +126,7 @@ export function createServer(client: TranscriptDockClient, options: ServerOption
     },
     async ({ url, mode, language, max_credits, idempotency_key }) => {
       try {
-        const job = await client.createJob({ url, mode: mode ?? "captions_only", language: language ?? null, max_credits: max_credits ?? null }, idempotency_key);
+        const job = await client.createJob({ url, mode: mode ?? defaultMode(url), language: language ?? null, max_credits: max_credits ?? null }, idempotency_key);
         return jsonContent(job, JOB_RETRIEVAL);
       } catch (error) {
         return errorContent(error, client);
@@ -124,10 +137,10 @@ export function createServer(client: TranscriptDockClient, options: ServerOption
   server.registerTool(
     "get_video_transcript",
     {
-      description: "Get the transcript of a YouTube or TikTok video in one step: submits a job, waits for it (long polling), and returns the transcript text (or srt/vtt/segments). Use this for 'what does this video say' questions. Default mode captions_only (1 credit); pass mode auto to fall back to AI transcription when the video has no captions. Same video and options are served from cache without a new charge.",
+      description: "Get the transcript of a YouTube, TikTok or Instagram Reel video in one step: submits a job, waits for it (long polling), and returns the transcript text (or srt/vtt/segments). Use this for 'what does this video say' questions. Default mode captions_only (1 credit); pass mode auto to fall back to AI transcription when the video has no captions. Instagram links default to auto (AI transcription, paid plans). Same video and options are served from cache without a new charge.",
       inputSchema: {
-        url: z.string().url().describe("YouTube or TikTok video URL."),
-        mode: z.enum(["captions_only", "auto", "transcribe"]).optional().describe("Default captions_only (1 credit). auto: captions if present, else AI transcription (2 credits per started minute, paid plans)."),
+        url: z.string().url().describe("YouTube, TikTok or Instagram Reel URL."),
+        mode: z.enum(["captions_only", "auto", "transcribe"]).optional().describe("Default captions_only (1 credit), or auto for Instagram. auto: captions if present, else AI transcription (2 credits per started minute, paid plans)."),
         format: z.enum(["text", "srt", "vtt", "segments"]).optional().describe("text (default) is the most compact; segments returns timed JSON."),
         timeout_seconds: z.number().int().min(5).max(600).optional().describe("Give up after this many seconds (default 120) and return the job state instead."),
       },
@@ -135,7 +148,7 @@ export function createServer(client: TranscriptDockClient, options: ServerOption
     },
     async ({ url, mode, format, timeout_seconds }) => {
       try {
-        const input = { url, mode: mode ?? "captions_only", language: null, max_credits: null } as const;
+        const input = { url, mode: mode ?? defaultMode(url), language: null, max_credits: null } as const;
         // Deterministic key: the same URL and mode from the same agent replays the job.
         const key = `mcp-${createHash("sha256").update(`${input.mode}:${url}`).digest("hex").slice(0, 32)}`;
         const resolved = format ?? "text";
