@@ -1,0 +1,52 @@
+{
+  "name": "@transcriptdock/mcp",
+  "version": "0.1.2",
+  "private": false,
+  "type": "module",
+  "description": "MCP server for TranscriptDock: transcribe videos and fetch transcripts from Claude, Cursor and other agents.",
+  "license": "MIT",
+  "homepage": "https://www.transcriptdock.com/docs/mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TranscriptDock/transcriptdock-mcp.git"
+  },
+  "bugs": "https://github.com/TranscriptDock/transcriptdock-mcp/issues",
+  "keywords": ["mcp", "model-context-protocol", "transcript", "youtube", "tiktok", "instagram", "subtitles", "claude", "cursor"],
+  "bin": {
+    "transcriptdock-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "tsc && node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./server": {
+      "types": "./src/server.ts",
+      "default": "./dist/server.js"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "mcpName": "com.transcriptdock/mcp"
+}
